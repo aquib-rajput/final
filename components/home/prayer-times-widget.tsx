@@ -74,30 +74,25 @@ function getNextPrayer(prayers: PrayerTime[]) {
 export function PrayerTimesWidget() {
   const [mounted, setMounted] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
-  const [currentPrayer, setCurrentPrayer] = useState("");
-  const [nextPrayer, setNextPrayer] = useState({ name: "", time: "" });
 
   useEffect(() => {
     setMounted(true);
     setCurrentTime(new Date());
-    setCurrentPrayer(getCurrentPrayer(defaultPrayerTimes));
-    setNextPrayer(getNextPrayer(defaultPrayerTimes));
 
     const timer = setInterval(() => {
-      setCurrentTime(new Date());
+      setCurrentTime((prev) => new Date(prev ? prev.getTime() + 1000 : Date.now()));
     }, 1000);
 
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    if (!currentTime) {
-      return;
-    }
+  const currentPrayer = mounted && currentTime
+    ? getCurrentPrayer(defaultPrayerTimes)
+    : "";
 
-    setCurrentPrayer(getCurrentPrayer(defaultPrayerTimes));
-    setNextPrayer(getNextPrayer(defaultPrayerTimes));
-  }, [currentTime]);
+  const nextPrayer = mounted && currentTime
+    ? getNextPrayer(defaultPrayerTimes)
+    : { name: "", time: "" };
 
   const displayTime = mounted && currentTime
     ? currentTime.toLocaleTimeString("en-US", {
