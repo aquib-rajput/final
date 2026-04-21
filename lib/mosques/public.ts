@@ -151,7 +151,7 @@ function getPublicClient() {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    console.error("[public] Missing Supabase environment variables for public content");
+    // Supabase not configured - this is expected in development without a database
     return null;
   }
 
