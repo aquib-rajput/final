@@ -35,7 +35,9 @@ export default function ReportsPage() {
   const totalMosques = mosques.length
   const registeredMosques = mosques.filter(m => m.registrationStatus === "registered").length
   const pendingMosques = mosques.filter(m => m.registrationStatus === "pending").length
-  const averageRating = mosqueAssessments.reduce((sum, a) => sum + a.overallRating, 0) / mosqueAssessments.length
+  const averageRating = mosqueAssessments.length
+    ? mosqueAssessments.reduce((sum, a) => sum + a.overallRating, 0) / mosqueAssessments.length
+    : 0
   const totalVisits = mosqueVisits.length
   const completedVisits = mosqueVisits.filter(v => v.status === "completed").length
 
