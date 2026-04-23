@@ -67,9 +67,11 @@ export function Header() {
   }, [])
 
   const handleSignOut = async () => {
-    await signOut()
-    router.push('/')
-    router.refresh()
+    try {
+      await signOut()
+    } finally {
+      router.replace('/')
+    }
   }
 
   const getInitials = (name: string | null | undefined) => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUser, useAuth as useClerkAuth } from "@clerk/nextjs";
 import { Loader2 } from "lucide-react";
@@ -64,6 +64,7 @@ function OnboardingContent() {
   const [loadingMosques, setLoadingMosques] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
+  const hasRedirectedRef = useRef(false);
 
   const clerkIdentity = useMemo(
     () => ({
@@ -101,16 +102,18 @@ function OnboardingContent() {
   );
 
   useEffect(() => {
-    if (!authLoading && !isSignedIn) {
+    if (authLoading) return;
+    if (!isSignedIn && !hasRedirectedRef.current) {
+      hasRedirectedRef.current = true;
       router.replace("/sign-in?redirect_url=/onboarding");
     }
   }, [authLoading, isSignedIn, router]);
 
   useEffect(() => {
-    if (!authLoading && isSignedIn && !needsOnboarding) {
-      router.replace(redirectTarget);
-      router.refresh();
-    }
+    if (authLoading || !isSignedIn || needsOnboarding) return;
+    if (hasRedirectedRef.current) return;
+    hasRedirectedRef.current = true;
+    router.replace(redirectTarget);
   }, [authLoading, isSignedIn, needsOnboarding, redirectTarget, router]);
 
   useEffect(() => {
@@ -134,45 +137,33 @@ function OnboardingContent() {
 
   // Fetch mosques for selection
   useEffect(() => {
+    if (!isSignedIn) return;
+
+    let cancelled = false;
+
     const fetchMosques = async () => {
       try {
-        const response = await fetch("/api/mosques?limit=100");
-        if (response.ok) {
-          const data = await response.json();
-          setMosques(data.mosques || []);
-        } else {
-          // Fallback to mock data if API fails
-          const { mockMosques } = await import("@/lib/data/mock-data");
-          setMosques(mockMosques.map(m => ({
-            id: m.id,
-            name: m.name,
-            city: m.city,
-            state: m.state
-          })));
+        const response = await fetch("/api/mosques?limit=100", { cache: "no-store" });
+        if (!response.ok) {
+          if (!cancelled) setMosques([]);
+          return;
         }
+        const data = await response.json();
+        if (!cancelled) setMosques(data.mosques || []);
       } catch (error) {
         console.error("Failed to fetch mosques:", error);
-        // Fallback to mock data
-        try {
-          const { mockMosques } = await import("@/lib/data/mock-data");
-          setMosques(mockMosques.map(m => ({
-            id: m.id,
-            name: m.name,
-            city: m.city,
-            state: m.state
-          })));
-        } catch (fallbackError) {
-          console.error("Failed to load mock data:", fallbackError);
-        }
+        if (!cancelled) setMosques([]);
       } finally {
-        setLoadingMosques(false);
+        if (!cancelled) setLoadingMosques(false);
       }
     };
 
-    if (isSignedIn) {
-      fetchMosques();
-    }
-  }, [isSignedIn, getToken]);
+    void fetchMosques();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isSignedIn]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -228,8 +219,8 @@ function OnboardingContent() {
       }
 
       await refreshProfile();
+      hasRedirectedRef.current = true;
       router.replace(redirectTarget);
-      router.refresh();
     } catch (error) {
       setPageError(error instanceof Error ? error.message : "We couldn't finish setup yet.");
     } finally {

@@ -282,20 +282,35 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!supabase || !isSignedIn || !user?.id) return;
 
+    const userId = user.id;
+
     const channel = supabase
-      .channel(`profile-sync-${user.id}`)
+      .channel(`profile-sync-${userId}`)
       .on(
         "postgres_changes",
         {
           event: "UPDATE",
           schema: "public",
           table: "profiles",
-          filter: `id=eq.${user.id}`,
+          filter: `id=eq.${userId}`,
         },
         (payload: RealtimePostgresChangesPayload<Profile>) => {
           if (!payload.new) return;
           const nextProfile = payload.new as Profile;
-          setProfile(nextProfile);
+          setProfile((prev) => {
+            // Skip state update if nothing meaningful changed, to avoid render churn.
+            if (
+              prev &&
+              prev.updated_at === nextProfile.updated_at &&
+              prev.full_name === nextProfile.full_name &&
+              prev.username === nextProfile.username &&
+              prev.role === nextProfile.role &&
+              prev.avatar_url === nextProfile.avatar_url
+            ) {
+              return prev;
+            }
+            return nextProfile;
+          });
           setNeedsOnboarding(
             evaluateProfileCompletion(
               {
@@ -310,17 +325,12 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel);
     };
-  }, [
-    isSignedIn,
-    supabase,
-    user?.fullName,
-    user?.firstName,
-    user?.id,
-    user?.lastName,
-    user?.primaryEmailAddress?.emailAddress,
-  ]);
+    // Intentionally depend only on stable identifiers so the channel is not
+    // torn down and re-subscribed on every Clerk user field change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSignedIn, supabase, user?.id]);
 
   const signOut = async () => {
     await clerkSignOut();

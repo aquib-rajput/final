@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -13,11 +13,24 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
 
   const safePathname = pathname || "/";
   const bypassOnboarding = shouldBypassOnboarding(safePathname);
+  const lastRedirectFromRef = useRef<string | null>(null);
+
+  // Reset the redirect guard whenever the user navigates to a new path so
+  // repeated onboarding loops can't latch on forever.
+  useEffect(() => {
+    lastRedirectFromRef.current = null;
+  }, [safePathname]);
 
   useEffect(() => {
     if (loading || !isSignedIn || !needsOnboarding || bypassOnboarding) {
       return;
     }
+
+    // Only fire the redirect once per pathname to avoid render->replace loops.
+    if (lastRedirectFromRef.current === safePathname) {
+      return;
+    }
+    lastRedirectFromRef.current = safePathname;
 
     const currentPath =
       typeof window !== "undefined"

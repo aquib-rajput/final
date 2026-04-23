@@ -200,6 +200,57 @@ export const getFeaturedMosques = cache(async (limit = 3) => {
   return getPublicDirectoryMosques(true, limit);
 });
 
+export interface PublicPlatformStats {
+  mosques: number;
+  members: number;
+  upcomingEvents: number;
+  countries: number;
+}
+
+export const getPublicPlatformStats = cache(async (): Promise<PublicPlatformStats> => {
+  const supabase = getPublicClient();
+
+  if (!supabase) {
+    return { mosques: 0, members: 0, upcomingEvents: 0, countries: 0 };
+  }
+
+  const nowIso = new Date().toISOString();
+
+  const [mosquesResult, membersResult, eventsResult, countriesResult] = await Promise.all([
+    supabase
+      .from("mosques")
+      .select("id", { count: "exact", head: true })
+      .eq("is_verified", true),
+    supabase.from("profiles").select("id", { count: "exact", head: true }),
+    supabase
+      .from("events")
+      .select("id", { count: "exact", head: true })
+      .eq("is_published", true)
+      .gte("start_date", nowIso),
+    supabase.from("mosques").select("country").eq("is_verified", true),
+  ]);
+
+  logQueryError("stats_mosques", mosquesResult.error);
+  logQueryError("stats_members", membersResult.error);
+  logQueryError("stats_events", eventsResult.error);
+  logQueryError("stats_countries", countriesResult.error);
+
+  const uniqueCountries = new Set<string>();
+  for (const row of countriesResult.data ?? []) {
+    const country = (row as { country?: string | null }).country;
+    if (country && country.trim().length > 0) {
+      uniqueCountries.add(country.trim());
+    }
+  }
+
+  return {
+    mosques: mosquesResult.count ?? 0,
+    members: membersResult.count ?? 0,
+    upcomingEvents: eventsResult.count ?? 0,
+    countries: uniqueCountries.size,
+  };
+});
+
 export const getUpcomingEventsPreview = cache(async (limit = 4) => {
   const supabase = getPublicClient();
 
