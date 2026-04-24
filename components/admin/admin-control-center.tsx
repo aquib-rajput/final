@@ -306,8 +306,16 @@ export function AdminControlCenter({
       ),
     [allowedEntityKeys, metadata?.entities]
   );
-  const selectedEntity =
-    availableEntities.find((entity) => entity.key === selectedEntityKey) ?? null;
+  const selectedEntity = useMemo(
+    () =>
+      availableEntities.find((entity) => entity.key === selectedEntityKey) ?? null,
+    [availableEntities, selectedEntityKey]
+  );
+  // Primitive keys are what we actually want to trigger fetches on. Deriving
+  // them here means the effects below don't re-run on every metadata snapshot
+  // refresh (which mutates object identities but keeps these values stable).
+  const selectedEntityFetchKey = selectedEntity?.key ?? null;
+  const selectedEntityIsSingleton = selectedEntity?.singleton ?? false;
   const activeLookups = entityData?.lookups ?? metadata?.lookups ?? {};
   const filterFields = useMemo(
     () =>
@@ -362,23 +370,27 @@ export function AdminControlCenter({
   }, [selectedEntityKey]);
 
   useEffect(() => {
-    if (!selectedEntity) {
+    if (!selectedEntityFetchKey) {
       setEntityData(null);
       return;
     }
 
-    const entity = selectedEntity;
+    const entityKey = selectedEntityFetchKey;
+    const isSingleton = selectedEntityIsSingleton;
     let cancelled = false;
 
     async function loadEntity() {
-      setLoadingEntity(true);
+      // Only flip the full-page spinner on the first load for this entity.
+      // Subsequent refreshes (from Refresh button, mutations, or realtime
+      // ticks) refetch silently in the background so the UI doesn't flash.
+      setLoadingEntity((previous) => (entityData ? previous : true));
       try {
         const params = new URLSearchParams({
-          limit: entity.singleton ? "1" : "50",
+          limit: isSingleton ? "1" : "50",
           offset: "0",
         });
 
-        if (!entity.singleton && deferredSearch.trim()) {
+        if (!isSingleton && deferredSearch.trim()) {
           params.set("search", deferredSearch.trim());
         }
 
@@ -389,7 +401,7 @@ export function AdminControlCenter({
         }
 
         const response = await fetch(
-          `/api/admin/entities/${entity.key}?${params.toString()}`,
+          `/api/admin/entities/${entityKey}?${params.toString()}`,
           { cache: "no-store" }
         );
         const payload = (await response.json().catch(() => ({}))) as
@@ -428,22 +440,30 @@ export function AdminControlCenter({
     return () => {
       cancelled = true;
     };
-  }, [selectedEntity, deferredSearch, filters, refreshTick]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    selectedEntityFetchKey,
+    selectedEntityIsSingleton,
+    deferredSearch,
+    filters,
+    refreshTick,
+  ]);
 
   useEffect(() => {
-    if (!selectedEntity) {
+    if (!selectedEntityFetchKey) {
       setActivity([]);
       return;
     }
 
-    const entity = selectedEntity;
+    const entityKey = selectedEntityFetchKey;
     let cancelled = false;
 
     async function loadActivity() {
-      setLoadingActivity(true);
+      // Background refreshes should not blank out the activity feed.
+      setLoadingActivity((previous) => (activity.length ? previous : true));
       try {
         const response = await fetch(
-          `/api/admin/activity?limit=6&entityType=${entity.key}`,
+          `/api/admin/activity?limit=6&entityType=${entityKey}`,
           { cache: "no-store" }
         );
         const payload = (await response.json().catch(() => ({}))) as
@@ -462,7 +482,7 @@ export function AdminControlCenter({
           setActivity((payload as AdminActivityResponse).items);
           setActivityUnavailable(false);
         }
-      } catch (error) {
+      } catch {
         if (!cancelled) {
           setActivity([]);
           setActivityUnavailable(true);
@@ -479,26 +499,21 @@ export function AdminControlCenter({
     return () => {
       cancelled = true;
     };
-  }, [selectedEntity, refreshTick]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEntityFetchKey, refreshTick]);
 
+  // Realtime events are used purely to clear any stale "realtime unavailable"
+  // badge state. We intentionally do NOT force a table refetch here: the
+  // shared admin metadata store already patches live entity counts in place,
+  // mutations performed in this panel bump `refreshTick` explicitly, and the
+  // Refresh button is available for pulling in externally-made changes. This
+  // prevents the list and activity feed from flashing "Loading..." every time
+  // an unrelated realtime event arrives.
   useRealtimeGateway({
     enabled: Boolean(metadata?.realtimeFeed),
     feedStreamId: metadata?.realtimeFeed,
-    onEvent: (event) => {
+    onEvent: () => {
       setRealtimeIssue(null);
-      if (!selectedEntityKey) {
-        refreshMetadata();
-        return;
-      }
-
-      if (event.entityType !== selectedEntityKey && event.entityType !== "settings") {
-        return;
-      }
-
-      startTransition(() => {
-        refreshMetadata();
-        setRefreshTick((current) => current + 1);
-      });
     },
     onError: (error) => {
       setRealtimeIssue(error.message);
