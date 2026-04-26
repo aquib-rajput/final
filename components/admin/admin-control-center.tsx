@@ -42,6 +42,16 @@ import type {
 import { useAdminPanelMetadata } from "@/lib/hooks/use-admin-panel";
 import { useRealtimeGateway } from "@/lib/hooks/use-realtime-gateway";
 import { cn } from "@/lib/utils";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -297,6 +307,10 @@ export function AdminControlCenter({
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [formValues, setFormValues] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
+  const [pendingDeleteItem, setPendingDeleteItem] = useState<
+    Record<string, unknown> | null
+  >(null);
+  const [deleting, setDeleting] = useState(false);
 
   const deferredSearch = useDeferredValue(search);
   const availableEntities = useMemo(
@@ -575,16 +589,24 @@ export function AdminControlCenter({
     setFilters({});
   }
 
-  async function handleDelete(item: Record<string, unknown>) {
+  function requestDelete(item: Record<string, unknown>) {
     if (!selectedEntity?.capability.delete) return;
     const itemId = String(item[selectedEntity.primaryKey] ?? "");
     if (!itemId) return;
+    setPendingDeleteItem(item);
+  }
 
-    const confirmed = window.confirm(
-      `Delete this ${selectedEntity.singularLabel.toLowerCase()}? This action cannot be undone.`
+  async function confirmDelete() {
+    if (!selectedEntity?.capability.delete || !pendingDeleteItem) return;
+    const itemId = String(
+      pendingDeleteItem[selectedEntity.primaryKey] ?? ""
     );
-    if (!confirmed) return;
+    if (!itemId) {
+      setPendingDeleteItem(null);
+      return;
+    }
 
+    setDeleting(true);
     try {
       const response = await fetch(
         `/api/admin/entities/${selectedEntity.key}/${itemId}`,
@@ -597,16 +619,48 @@ export function AdminControlCenter({
       };
 
       if (!response.ok) {
-        throw new Error(payload.error || "Delete failed");
+        // Foreign-key violations bubble up from Postgres with a long, technical
+        // message. Surface a user-friendly hint while keeping the underlying
+        // detail in the toast description.
+        const fallback = `${selectedEntity.singularLabel} could not be deleted`;
+        const rawMessage = payload.error || fallback;
+        const isForeignKey = /foreign key|violates|referenced|constraint/i.test(
+          rawMessage
+        );
+        if (isForeignKey) {
+          toast.error(`${fallback} because it has linked records.`, {
+            description:
+              "Remove or reassign related items (events, prayer times, donations, etc.) and try again.",
+          });
+        } else {
+          toast.error(rawMessage);
+        }
+        return;
       }
 
       toast.success(`${selectedEntity.singularLabel} deleted`);
+      // Optimistically drop the row so the table updates instantly even before
+      // the background refetch completes.
+      setEntityData((current) => {
+        if (!current) return current;
+        const filteredItems = current.items.filter(
+          (existing) => String(existing[selectedEntity.primaryKey] ?? "") !== itemId
+        );
+        return {
+          ...current,
+          items: filteredItems,
+          totalCount: Math.max(0, (current.totalCount ?? filteredItems.length) - 1),
+        };
+      });
       startTransition(() => {
         refreshMetadata();
         setRefreshTick((current) => current + 1);
       });
+      setPendingDeleteItem(null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Delete failed");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -1113,7 +1167,8 @@ export function AdminControlCenter({
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    onClick={() => handleDelete(item)}
+                                    aria-label={`Delete ${selectedEntity.singularLabel.toLowerCase()}`}
+                                    onClick={() => requestDelete(item)}
                                   >
                                     <Trash2 className="h-4 w-4 text-destructive" />
                                   </Button>
@@ -1251,6 +1306,43 @@ export function AdminControlCenter({
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={pendingDeleteItem !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleting) {
+            setPendingDeleteItem(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete this {selectedEntity?.singularLabel.toLowerCase() ?? "record"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. The record will be permanently
+              removed from the database.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmDelete();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
