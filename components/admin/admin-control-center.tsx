@@ -649,7 +649,7 @@ export function AdminControlCenter({
         return {
           ...current,
           items: filteredItems,
-          totalCount: Math.max(0, (current.totalCount ?? filteredItems.length) - 1),
+          total: Math.max(0, (current.total ?? filteredItems.length) - 1),
         };
       });
       startTransition(() => {
