@@ -141,6 +141,39 @@
   }
   body {
     @apply bg-background text-foreground;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    overscroll-behavior-y: contain;
+    text-size-adjust: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
+  /* Prevent iOS auto-zoom on focused inputs by ensuring 16px+ font size on small screens. */
+  @media (max-width: 1023px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px;
+    }
+  }
+  /* Disable user-select on tap targets so dragging never highlights labels. */
+  button,
+  [role='button'],
+  a {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  /* Re-enable selection on actual prose content. */
+  p,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  span:not([class*='sr-only']),
+  li {
+    -webkit-user-select: text;
+    user-select: text;
   }
 }
 
@@ -168,6 +201,47 @@
 
   .safe-top {
     padding-top: max(env(safe-area-inset-top), 0px);
+  }
+
+  .safe-x {
+    padding-left: max(env(safe-area-inset-left), 0px);
+    padding-right: max(env(safe-area-inset-right), 0px);
+  }
+
+  /* Mobile-first responsive container that snaps to phone width and expands
+     on tablets/desktop. Pages use this as the default content wrapper. */
+  .mobile-container {
+    @apply mx-auto w-full max-w-md px-4 sm:max-w-2xl sm:px-6 lg:max-w-7xl lg:px-8;
+  }
+
+  /* iOS-style rounded card with consistent vertical rhythm. */
+  .ios-card {
+    @apply rounded-2xl border border-border/50 bg-card p-4 shadow-elevation-xs;
+  }
+
+  /* Press-down feedback for tappable cards (mimics native feel). */
+  .tap-card {
+    @apply transition-transform duration-150 ease-out active:scale-[0.98];
+  }
+
+  /* Hides scrollbar while still scrolling (used for horizontal chip rows). */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Sticky bottom action bar (e.g. "Save" buttons) that respects safe areas. */
+  .sticky-bottom-action {
+    position: sticky;
+    bottom: 0;
+    background-color: hsl(var(--background) / 0.95);
+    backdrop-filter: blur(8px);
+    border-top: 1px solid hsl(var(--border) / 0.5);
+    padding: 0.75rem 1rem;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
   }
 
   /* Premium shadow system for elevation */

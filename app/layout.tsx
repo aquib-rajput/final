@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono, Amiri } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { AppProviders } from '@/components/providers'
+import { MobileBottomNav } from '@/components/layout/mobile-bottom-nav'
 import './globals.css'
 
 const geist = Geist({
@@ -51,6 +52,9 @@ export const viewport: Viewport = {
   ],
   width: 'device-width',
   initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({
@@ -59,9 +63,14 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${geist.variable} ${geistMono.variable} ${amiri.variable} font-sans antialiased`}>
-        <AppProviders>{children}</AppProviders>
+    <html lang="en" className="bg-background" suppressHydrationWarning>
+      <body
+        className={`${geist.variable} ${geistMono.variable} ${amiri.variable} font-sans antialiased min-h-[100dvh] bg-background text-foreground pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0`}
+      >
+        <AppProviders>
+          {children}
+          <MobileBottomNav />
+        </AppProviders>
         <Analytics />
       </body>
     </html>
