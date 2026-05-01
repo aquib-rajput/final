@@ -1115,48 +1115,50 @@ export function AdminControlCenter({
                   No {selectedEntity.label.toLowerCase()} found.
                 </div>
               ) : (
-                <div className="rounded-lg border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        {selectedEntity.listFields.map((fieldKey) => {
-                          const field = selectedEntity.formFields.find(
-                            (entry) => entry.key === fieldKey
-                          );
-                          return (
-                            <TableHead key={fieldKey}>
-                              {field?.label ?? fieldKey}
-                            </TableHead>
-                          );
-                        })}
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {entityData.items.map((item) => (
-                        <TableRow
-                          key={String(
-                            item[selectedEntity.primaryKey] ??
-                              selectedEntity.singletonId ??
-                              selectedEntity.key
-                          )}
+                <>
+                  {/* Mobile card view (< md). Tables don't fit on phones, so we
+                      stack each record into a tappable card with the same data
+                      and the same Edit/Delete actions. */}
+                  <div className="space-y-3 md:hidden">
+                    {entityData.items.map((item) => {
+                      const itemKey = String(
+                        item[selectedEntity.primaryKey] ??
+                          selectedEntity.singletonId ??
+                          selectedEntity.key
+                      );
+                      const [primaryFieldKey, ...secondaryFieldKeys] =
+                        selectedEntity.listFields;
+                      const primaryField = primaryFieldKey
+                        ? selectedEntity.formFields.find(
+                            (entry) => entry.key === primaryFieldKey
+                          )
+                        : undefined;
+                      const primaryValue = primaryFieldKey
+                        ? formatCellValue(
+                            primaryField,
+                            item[primaryFieldKey],
+                            activeLookups
+                          )
+                        : selectedEntity.singularLabel;
+
+                      return (
+                        <div
+                          key={itemKey}
+                          className="ios-card flex flex-col gap-3"
                         >
-                          {selectedEntity.listFields.map((fieldKey) => {
-                            const field = selectedEntity.formFields.find(
-                              (entry) => entry.key === fieldKey
-                            );
-                            return (
-                              <TableCell key={fieldKey}>
-                                {formatCellValue(field, item[fieldKey], activeLookups)}
-                              </TableCell>
-                            );
-                          })}
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-semibold text-foreground line-clamp-2">
+                                {primaryValue}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1">
                               {selectedEntity.capability.update && (
                                 <Button
                                   variant="ghost"
                                   size="icon"
+                                  className="h-9 w-9"
+                                  aria-label={`Edit ${selectedEntity.singularLabel.toLowerCase()}`}
                                   onClick={() => openEditDialog(item)}
                                 >
                                   <Pencil className="h-4 w-4" />
@@ -1167,6 +1169,7 @@ export function AdminControlCenter({
                                   <Button
                                     variant="ghost"
                                     size="icon"
+                                    className="h-9 w-9"
                                     aria-label={`Delete ${selectedEntity.singularLabel.toLowerCase()}`}
                                     onClick={() => requestDelete(item)}
                                   >
@@ -1174,12 +1177,110 @@ export function AdminControlCenter({
                                   </Button>
                                 )}
                             </div>
-                          </TableCell>
+                          </div>
+
+                          {secondaryFieldKeys.length > 0 ? (
+                            <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                              {secondaryFieldKeys.map((fieldKey) => {
+                                const field = selectedEntity.formFields.find(
+                                  (entry) => entry.key === fieldKey
+                                );
+                                return (
+                                  <div
+                                    key={fieldKey}
+                                    className="flex min-w-0 flex-col gap-0.5"
+                                  >
+                                    <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                                      {field?.label ?? fieldKey}
+                                    </dt>
+                                    <dd className="truncate text-foreground">
+                                      {formatCellValue(
+                                        field,
+                                        item[fieldKey],
+                                        activeLookups
+                                      )}
+                                    </dd>
+                                  </div>
+                                );
+                              })}
+                            </dl>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Desktop / tablet table (>= md). */}
+                  <div className="hidden rounded-lg border md:block">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          {selectedEntity.listFields.map((fieldKey) => {
+                            const field = selectedEntity.formFields.find(
+                              (entry) => entry.key === fieldKey
+                            );
+                            return (
+                              <TableHead key={fieldKey}>
+                                {field?.label ?? fieldKey}
+                              </TableHead>
+                            );
+                          })}
+                          <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                      </TableHeader>
+                      <TableBody>
+                        {entityData.items.map((item) => (
+                          <TableRow
+                            key={String(
+                              item[selectedEntity.primaryKey] ??
+                                selectedEntity.singletonId ??
+                                selectedEntity.key
+                            )}
+                          >
+                            {selectedEntity.listFields.map((fieldKey) => {
+                              const field = selectedEntity.formFields.find(
+                                (entry) => entry.key === fieldKey
+                              );
+                              return (
+                                <TableCell key={fieldKey}>
+                                  {formatCellValue(
+                                    field,
+                                    item[fieldKey],
+                                    activeLookups
+                                  )}
+                                </TableCell>
+                              );
+                            })}
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-2">
+                                {selectedEntity.capability.update && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => openEditDialog(item)}
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                )}
+                                {selectedEntity.capability.delete &&
+                                  !selectedEntity.singleton && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      aria-label={`Delete ${selectedEntity.singularLabel.toLowerCase()}`}
+                                      onClick={() => requestDelete(item)}
+                                    >
+                                      <Trash2 className="h-4 w-4 text-destructive" />
+                                    </Button>
+                                  )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>
