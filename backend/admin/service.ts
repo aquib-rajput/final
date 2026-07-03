@@ -1890,18 +1890,25 @@ export async function deleteAdminEntityRecord(input: {
     record: existingRecord,
   });
 
-  const { data, error } = await supabase
+  // We intentionally do NOT chain `.select("*").maybeSingle()` after the delete:
+  // with Supabase RLS the post-delete SELECT representation frequently returns
+  // null because the row no longer satisfies the SELECT policy, which would
+  // surface a misleading "Record not found" error even though the delete
+  // succeeded. Asking for an exact count instead lets us verify the row was
+  // actually removed without depending on the returning representation.
+  const { error, count } = await supabase
     .from(definition.table)
-    .delete()
-    .eq(definition.primaryKey, input.id)
-    .select("*")
-    .maybeSingle();
+    .delete({ count: "exact" })
+    .eq(definition.primaryKey, input.id);
 
   if (error) {
     throw new AdminServiceError(error.message, 500);
   }
 
-  if (!data) {
+  if (count === 0) {
+    // Either the row vanished between the pre-flight load and this delete, or
+    // RLS blocked the delete silently. Either way it's a 404 from the caller's
+    // perspective.
     throw new AdminServiceError("Record not found", 404);
   }
 
@@ -1909,7 +1916,7 @@ export async function deleteAdminEntityRecord(input: {
     supabase,
     session: input.session,
     definition,
-    item: data as Record<string, unknown>,
+    item: existingRecord,
   });
 
   await publishAdminMutation({

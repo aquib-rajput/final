@@ -1,65 +1,110 @@
 "use client"
 
-import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
-import { useState, useEffect } from 'react'
+import Link from "next/link"
+import { usePathname, useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
 import {
-  Moon, 
-  Sun, 
-  Menu, 
-  X, 
-  MapPin, 
-  Clock, 
-  Calendar, 
-  Users, 
-  LayoutDashboard,
+  BookOpen,
   Building2,
-  Shield,
-  Rss,
-  LogIn,
-  LogOut,
-  User,
-  Settings,
-  MessageSquare,
+  Calendar,
   ChevronDown,
-  PanelTop,
+  Clock,
   Crown,
-  BookOpen
-} from 'lucide-react'
-import { useTheme } from 'next-themes'
-import { useAuth } from '@/lib/auth'
-import { Button } from '@/components/ui/button'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+  LayoutDashboard,
+  LogOut,
+  MapPin,
+  MessageSquare,
+  Moon,
+  PanelTop,
+  Rss,
+  Settings,
+  Shield,
+  Sun,
+  User,
+  Users,
+} from "lucide-react"
+import { useTheme } from "next-themes"
+import { useAuth } from "@/lib/auth"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { cn } from '@/lib/utils'
+} from "@/components/ui/dropdown-menu"
+import { cn } from "@/lib/utils"
+import { MobileDrawer } from "./mobile-drawer"
 
-const navigation = [
-  { name: 'Home', href: '/', icon: Building2 },
-  { name: 'Mosques', href: '/mosques', icon: MapPin },
-  { name: 'Feed', href: '/feed', icon: Rss, requiresAuth: true },
-  { name: 'Messages', href: '/messages', icon: MessageSquare, requiresAuth: true },
-  { name: 'Prayer Times', href: '/prayer-times', icon: Clock },
-  { name: 'Events', href: '/events', icon: Calendar },
-  { name: 'Community', href: '/community', icon: Users },
+const desktopNavigation = [
+  { name: "Home", href: "/", icon: Building2 },
+  { name: "Mosques", href: "/mosques", icon: MapPin },
+  { name: "Feed", href: "/feed", icon: Rss, requiresAuth: true },
+  { name: "Messages", href: "/messages", icon: MessageSquare, requiresAuth: true },
+  { name: "Prayer Times", href: "/prayer-times", icon: Clock },
+  { name: "Events", href: "/events", icon: Calendar },
+  { name: "Community", href: "/community", icon: Users },
 ]
 
+// Mobile app-bar titles for the current route. The mobile bar shows a single
+// page title instead of the full logo so it feels like a native screen.
+const ROUTE_TITLES: Array<{ match: RegExp; title: string }> = [
+  { match: /^\/mosques$/, title: "Mosques" },
+  { match: /^\/mosques\/register$/, title: "Register Mosque" },
+  { match: /^\/mosques\/[^/]+\/management/, title: "Mosque Management" },
+  { match: /^\/mosques\/[^/]+\/imam/, title: "Imam Profile" },
+  { match: /^\/mosques\/[^/]+/, title: "Mosque Detail" },
+  { match: /^\/prayer-times/, title: "Prayer Times" },
+  { match: /^\/events\/[^/]+/, title: "Event Detail" },
+  { match: /^\/events/, title: "Events" },
+  { match: /^\/community/, title: "Community" },
+  { match: /^\/feed/, title: "Feed" },
+  { match: /^\/messages/, title: "Messages" },
+  { match: /^\/profile\/[^/]+/, title: "Profile" },
+  { match: /^\/profile/, title: "My Profile" },
+  { match: /^\/settings/, title: "Settings" },
+  { match: /^\/nearby/, title: "Nearby" },
+  { match: /^\/admin/, title: "Admin" },
+  { match: /^\/super-admin/, title: "Super Admin" },
+  { match: /^\/imam/, title: "Imam" },
+  { match: /^\/shura/, title: "Shura" },
+]
+
+function getMobileTitle(pathname: string): string | null {
+  if (pathname === "/") return null // Show logo on home.
+  const match = ROUTE_TITLES.find((entry) => entry.match.test(pathname))
+  return match?.title ?? null
+}
+
+function getInitials(name: string | null | undefined) {
+  if (!name) return "U"
+  return name
+    .split(" ")
+    .map((part) => part[0])
+    .filter(Boolean)
+    .join("")
+    .toUpperCase()
+    .slice(0, 2)
+}
+
 export function Header() {
-  const pathname = usePathname()
+  const pathname = usePathname() ?? "/"
   const router = useRouter()
   const { setTheme } = useTheme()
-  const { profile, signOut, loading, isAdmin, isShura, isSignedIn, resolvedRole, isSuperAdmin } = useAuth()
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const {
+    profile,
+    signOut,
+    loading,
+    isShura,
+    isSignedIn,
+    resolvedRole,
+    isSuperAdmin,
+  } = useAuth()
   const [mounted, setMounted] = useState(false)
 
-  const canAccessAdminPanel = resolvedRole === 'admin' || resolvedRole === 'super_admin'
-  const canAccessSuperAdminPanel = isSuperAdmin
-  const canAccessImamPanel = resolvedRole === 'imam' || resolvedRole === 'super_admin'
+  const canAccessAdminPanel = resolvedRole === "admin" || resolvedRole === "super_admin"
+  const canAccessImamPanel = resolvedRole === "imam" || resolvedRole === "super_admin"
   const canAccessShuraPanel = isShura
 
   useEffect(() => {
@@ -70,47 +115,93 @@ export function Header() {
     try {
       await signOut()
     } finally {
-      router.replace('/')
+      router.replace("/")
     }
   }
 
-  const getInitials = (name: string | null | undefined) => {
-    if (!name) return 'U'
-    return name
-      .split(' ')
-      .map((n) => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2)
-  }
+  const mobileTitle = getMobileTitle(pathname)
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <nav className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-        <div className="flex items-center gap-4 md:gap-8">
-          <Link href="/" className="flex items-center gap-2 group transition-all active:scale-95">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary shadow-lg shadow-primary/20 group-hover:shadow-primary/30 transition-all">
-              <MosqueIcon className="h-5 w-5 text-primary-foreground" />
+    <header
+      className="sticky top-0 z-40 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70"
+      style={{ paddingTop: "max(env(safe-area-inset-top), 0px)" }}
+    >
+      {/* Mobile app bar */}
+      <div className="flex h-14 items-center justify-between gap-2 px-3 lg:hidden">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {mobileTitle ? (
+            <>
+              <Link
+                href="/"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground active:scale-95"
+                aria-label="Home"
+              >
+                <MosqueIcon className="h-5 w-5" />
+              </Link>
+              <h1 className="truncate text-base font-semibold tracking-tight">
+                {mobileTitle}
+              </h1>
+            </>
+          ) : (
+            <Link href="/" className="flex items-center gap-2 active:scale-95">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+                <MosqueIcon className="h-5 w-5" />
+              </div>
+              <span className="text-lg font-bold tracking-tight">
+                Mosque<span className="text-primary">Connect</span>
+              </span>
+            </Link>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1">
+          <ThemeToggle mounted={mounted} setTheme={setTheme} />
+          {!loading && isSignedIn && (
+            <Link
+              href="/profile"
+              aria-label="Open profile"
+              className="flex h-10 w-10 items-center justify-center rounded-full active:scale-95"
+            >
+              <Avatar className="h-8 w-8">
+                <AvatarImage
+                  src={profile?.avatar_url || undefined}
+                  alt={profile?.full_name || "User"}
+                />
+                <AvatarFallback className="bg-primary/10 text-xs font-bold text-primary">
+                  {getInitials(profile?.full_name)}
+                </AvatarFallback>
+              </Avatar>
+            </Link>
+          )}
+          <MobileDrawer />
+        </div>
+      </div>
+
+      {/* Desktop nav */}
+      <nav className="mx-auto hidden max-w-7xl items-center justify-between gap-6 px-6 py-3 lg:flex lg:px-8">
+        <div className="flex items-center gap-8">
+          <Link href="/" className="group flex items-center gap-2 active:scale-95">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/20 transition-all group-hover:shadow-primary/30">
+              <MosqueIcon className="h-5 w-5" />
             </div>
             <span className="text-xl font-bold tracking-tight">
               Mosque<span className="text-primary">Connect</span>
             </span>
           </Link>
 
-          <div className="hidden lg:flex lg:items-center lg:gap-1.5">
-            {navigation.map((item) => {
-              const isActive = pathname === item.href
-              // Hide auth-required links for unauthenticated users
+          <div className="flex items-center gap-1.5">
+            {desktopNavigation.map((item) => {
               if (item.requiresAuth && !isSignedIn) return null
+              const isActive = pathname === item.href
               return (
                 <Link
                   key={item.name}
                   href={item.href}
                   className={cn(
                     "flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium transition-all",
-                    isActive 
-                      ? "bg-primary/10 text-primary shadow-sm" 
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground hover:translate-y-[-1px]"
+                    isActive
+                      ? "bg-primary/10 text-primary shadow-sm"
+                      : "text-muted-foreground hover:-translate-y-px hover:bg-muted hover:text-foreground",
                   )}
                 >
                   <item.icon className="h-4 w-4" />
@@ -122,273 +213,187 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Role-based navigation */}
-          {mounted && isSignedIn && (canAccessShuraPanel || canAccessImamPanel || canAccessAdminPanel || canAccessSuperAdminPanel) && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="hidden md:inline-flex gap-2 rounded-xl border-border/60">
-                  <PanelTop className="h-4 w-4" />
-                  Manage
-                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52 rounded-xl border-border/60">
-                <div className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Panel
-                </div>
-                {canAccessSuperAdminPanel && (
-                  <DropdownMenuItem asChild className="rounded-lg my-0.5">
-                    <Link href="/super-admin" className="flex items-center cursor-pointer">
-                      <Crown className="mr-2 h-4 w-4 text-amber-600 dark:text-amber-400" />
-                      Super Admin Panel
-                    </Link>
-                  </DropdownMenuItem>
-                )}
-                {canAccessAdminPanel && (
-                  <DropdownMenuItem asChild className="rounded-lg my-0.5">
-                    <Link href="/admin" className="flex items-center cursor-pointer">
-                      <LayoutDashboard className="mr-2 h-4 w-4" />
-                      Admin Panel
-                    </Link>
-                  </DropdownMenuItem>
-                )}
-                {canAccessImamPanel && (
-                  <DropdownMenuItem asChild className="rounded-lg my-0.5">
-                    <Link href="/imam" className="flex items-center cursor-pointer">
-                      <BookOpen className="mr-2 h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                      Imam Panel
-                    </Link>
-                  </DropdownMenuItem>
-                )}
-                {canAccessShuraPanel && (
-                  <DropdownMenuItem asChild className="rounded-lg my-0.5">
-                    <Link href="/shura" className="flex items-center cursor-pointer">
-                      <Shield className="mr-2 h-4 w-4 text-teal-600 dark:text-teal-400" />
-                      Shura Panel
-                    </Link>
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-
-          {!mounted ? (
-            <div className="h-9 w-9" /> // Placeholder to prevent layout shift
-          ) : (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl hover:bg-muted/80">
-                  <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-                  <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-                  <span className="sr-only">Toggle theme</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="rounded-xl border-border/60">
-                <DropdownMenuItem onClick={() => setTheme("light")} className="rounded-lg">
-                  Light
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme("dark")} className="rounded-lg">
-                  Dark
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme("system")} className="rounded-lg">
-                  System
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-
-          {/* Auth section */}
-          {!loading && (
-            <>
-              {isSignedIn ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full ring-offset-background transition-all hover:ring-2 hover:ring-primary/20">
-                      <Avatar className="h-8 w-8">
-                        <AvatarImage src={profile?.avatar_url || undefined} alt={profile?.full_name || 'User'} />
-                        <AvatarFallback className="text-xs bg-primary/5 text-primary font-bold">
-                          {getInitials(profile?.full_name)}
-                        </AvatarFallback>
-                      </Avatar>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-60 rounded-2xl border-border/60 p-2 shadow-xl">
-                    <div className="px-3 py-3 mb-1 bg-muted/30 rounded-xl">
-                      <p className="text-sm font-bold truncate">{profile?.full_name || 'User'}</p>
-                      <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest mt-0.5 opacity-70">
-                        {resolvedRole || profile?.role || 'Member'} Role
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate mt-1.5 opacity-80">{profile?.email || 'Guest access'}</p>
-                    </div>
-                    <DropdownMenuSeparator className="bg-border/40" />
-                    <DropdownMenuItem asChild className="rounded-lg my-0.5">
-                      <Link href="/profile" className="flex items-center cursor-pointer">
-                        <User className="mr-3 h-4 w-4 text-muted-foreground" />
-                        <span className="font-medium">My Profile</span>
+          {mounted &&
+            isSignedIn &&
+            (canAccessShuraPanel ||
+              canAccessImamPanel ||
+              canAccessAdminPanel ||
+              isSuperAdmin) && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 rounded-xl border-border/60"
+                  >
+                    <PanelTop className="h-4 w-4" />
+                    Manage
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  className="w-52 rounded-xl border-border/60"
+                >
+                  <div className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Panel
+                  </div>
+                  {isSuperAdmin && (
+                    <DropdownMenuItem asChild className="my-0.5 rounded-lg">
+                      <Link href="/super-admin" className="flex cursor-pointer items-center">
+                        <Crown className="mr-2 h-4 w-4 text-amber-600 dark:text-amber-400" />
+                        Super Admin Panel
                       </Link>
                     </DropdownMenuItem>
-                    <DropdownMenuItem asChild className="rounded-lg my-0.5">
-                      <Link href="/messages" className="flex items-center cursor-pointer md:hidden">
-                        <MessageSquare className="mr-3 h-4 w-4 text-muted-foreground" />
-                        <span className="font-medium">My Messages</span>
+                  )}
+                  {canAccessAdminPanel && (
+                    <DropdownMenuItem asChild className="my-0.5 rounded-lg">
+                      <Link href="/admin" className="flex cursor-pointer items-center">
+                        <LayoutDashboard className="mr-2 h-4 w-4" />
+                        Admin Panel
                       </Link>
                     </DropdownMenuItem>
-                    <DropdownMenuItem asChild className="rounded-lg my-0.5">
-                      <Link href="/settings" className="flex items-center cursor-pointer">
-                        <Settings className="mr-3 h-4 w-4 text-muted-foreground" />
-                        <span className="font-medium">Settings</span>
+                  )}
+                  {canAccessImamPanel && (
+                    <DropdownMenuItem asChild className="my-0.5 rounded-lg">
+                      <Link href="/imam" className="flex cursor-pointer items-center">
+                        <BookOpen className="mr-2 h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                        Imam Panel
                       </Link>
                     </DropdownMenuItem>
-                    <DropdownMenuSeparator className="bg-border/40" />
-                    <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:bg-destructive/10 focus:text-destructive rounded-lg font-bold">
-                      <LogOut className="mr-3 h-4 w-4" />
-                      Sign Out
+                  )}
+                  {canAccessShuraPanel && (
+                    <DropdownMenuItem asChild className="my-0.5 rounded-lg">
+                      <Link href="/shura" className="flex cursor-pointer items-center">
+                        <Shield className="mr-2 h-4 w-4 text-teal-600 dark:text-teal-400" />
+                        Shura Panel
+                      </Link>
                     </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : (
-                <div className="hidden sm:flex sm:gap-2">
-                  <Link href="/sign-in">
-                    <Button variant="ghost" size="sm" className="rounded-xl font-medium px-4">
-                      Sign In
-                    </Button>
-                  </Link>
-                  <Link href="/sign-up">
-                    <Button size="sm" className="rounded-xl font-bold px-5 shadow-lg shadow-primary/20">
-                      Sign Up
-                    </Button>
-                  </Link>
-                </div>
-              )}
-            </>
-          )}
-
-          <Button
-            variant="ghost"
-            size="icon"
-            className="lg:hidden h-10 w-10 rounded-xl active:bg-muted transition-all"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          >
-            {mobileMenuOpen ? (
-              <X className="h-6 w-6" />
-            ) : (
-              <Menu className="h-6 w-6" />
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
-            <span className="sr-only">Toggle menu</span>
-          </Button>
+
+          <ThemeToggle mounted={mounted} setTheme={setTheme} />
+
+          {!loading &&
+            (isSignedIn ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 rounded-full transition-all hover:ring-2 hover:ring-primary/20"
+                  >
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage
+                        src={profile?.avatar_url || undefined}
+                        alt={profile?.full_name || "User"}
+                      />
+                      <AvatarFallback className="bg-primary/5 text-xs font-bold text-primary">
+                        {getInitials(profile?.full_name)}
+                      </AvatarFallback>
+                    </Avatar>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  className="w-60 rounded-2xl border-border/60 p-2 shadow-xl"
+                >
+                  <div className="mb-1 rounded-xl bg-muted/30 px-3 py-3">
+                    <p className="truncate text-sm font-bold">
+                      {profile?.full_name || "User"}
+                    </p>
+                    <p className="mt-0.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground/70">
+                      {resolvedRole || profile?.role || "Member"} Role
+                    </p>
+                    <p className="mt-1.5 truncate text-xs text-muted-foreground/80">
+                      {profile?.email || "Guest access"}
+                    </p>
+                  </div>
+                  <DropdownMenuSeparator className="bg-border/40" />
+                  <DropdownMenuItem asChild className="my-0.5 rounded-lg">
+                    <Link href="/profile" className="flex cursor-pointer items-center">
+                      <User className="mr-3 h-4 w-4 text-muted-foreground" />
+                      <span className="font-medium">My Profile</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild className="my-0.5 rounded-lg">
+                    <Link href="/settings" className="flex cursor-pointer items-center">
+                      <Settings className="mr-3 h-4 w-4 text-muted-foreground" />
+                      <span className="font-medium">Settings</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="bg-border/40" />
+                  <DropdownMenuItem
+                    onClick={handleSignOut}
+                    className="rounded-lg font-bold text-destructive focus:bg-destructive/10 focus:text-destructive"
+                  >
+                    <LogOut className="mr-3 h-4 w-4" />
+                    Sign Out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <div className="flex gap-2">
+                <Link href="/sign-in">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="rounded-xl px-4 font-medium"
+                  >
+                    Sign In
+                  </Button>
+                </Link>
+                <Link href="/sign-up">
+                  <Button
+                    size="sm"
+                    className="rounded-xl px-5 font-bold shadow-lg shadow-primary/20"
+                  >
+                    Sign Up
+                  </Button>
+                </Link>
+              </div>
+            ))}
         </div>
       </nav>
-
-      {/* Mobile menu */}
-      {mobileMenuOpen && (
-        <div className="lg:hidden animate-in slide-in-from-top-2 duration-200">
-          <div className="space-y-1.5 px-4 pb-6 pt-2 bg-background border-b border-border/40 shadow-2xl">
-            {navigation.map((item) => {
-              const isActive = pathname === item.href
-              if (item.requiresAuth && !isSignedIn) return null
-              return (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={cn(
-                    "flex items-center gap-4 rounded-xl px-4 py-3 text-base font-semibold transition-all active:scale-95",
-                    isActive 
-                      ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20" 
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  )}
-                >
-                  <item.icon className={cn("h-5 w-5", isActive ? "text-primary-foreground" : "text-primary/70")} />
-                  {item.name}
-                </Link>
-              )
-            })}
-            
-            <div className="my-4 border-t border-border/40" />
-
-            {isSignedIn && (canAccessShuraPanel || canAccessImamPanel || canAccessAdminPanel || canAccessSuperAdminPanel) && (
-              <div className="space-y-1.5 mb-4">
-                <p className="px-4 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 mb-2">Management</p>
-                {canAccessSuperAdminPanel && (
-                  <Link
-                    href="/super-admin"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="flex items-center gap-4 rounded-xl px-4 py-3 text-base font-semibold text-amber-700 bg-amber-50/80 dark:bg-amber-950/30 dark:text-amber-300 active:scale-95 transition-all"
-                  >
-                    <Crown className="h-5 w-5" />
-                    Super Admin Panel
-                  </Link>
-                )}
-                {canAccessShuraPanel && (
-                  <Link
-                    href="/shura"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="flex items-center gap-4 rounded-xl px-4 py-3 text-base font-semibold text-teal-600 bg-teal-50/50 dark:bg-teal-950/30 active:scale-95 transition-all"
-                  >
-                    <Shield className="h-5 w-5" />
-                    Shura Panel
-                  </Link>
-                )}
-                {canAccessImamPanel && (
-                  <Link
-                    href="/imam"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="flex items-center gap-4 rounded-xl px-4 py-3 text-base font-semibold text-emerald-700 bg-emerald-50/70 dark:bg-emerald-950/30 dark:text-emerald-300 active:scale-95 transition-all"
-                  >
-                    <BookOpen className="h-5 w-5" />
-                    Imam Panel
-                  </Link>
-                )}
-                {canAccessAdminPanel && (
-                  <Link
-                    href="/admin"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="flex items-center gap-4 rounded-xl px-4 py-3 text-base font-semibold text-primary bg-primary/5 active:scale-95 transition-all"
-                  >
-                    <LayoutDashboard className="h-5 w-5" />
-                    Admin Panel
-                  </Link>
-                )}
-              </div>
-            )}
-
-            <div className="space-y-2">
-              {isSignedIn ? (
-                <button
-                  onClick={() => {
-                    handleSignOut()
-                    setMobileMenuOpen(false)
-                  }}
-                  className="flex w-full items-center gap-4 rounded-xl px-4 py-4 text-base font-bold text-destructive bg-destructive/5 active:scale-95 transition-all border border-destructive/10"
-                >
-                  <LogOut className="h-5 w-5" />
-                  Sign Out
-                </button>
-              ) : (
-                <div className="grid grid-cols-2 gap-3 pt-2">
-                  <Link
-                    href="/sign-in"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold text-muted-foreground bg-muted hover:bg-muted/80 active:scale-95 transition-all"
-                  >
-                    <LogIn className="h-4 w-4" />
-                    Sign In
-                  </Link>
-                  <Link
-                    href="/sign-up"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold text-primary-foreground bg-primary shadow-lg shadow-primary/20 active:scale-95 transition-all"
-                  >
-                    <User className="h-4 w-4" />
-                    Sign Up
-                  </Link>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </header>
+  )
+}
+
+function ThemeToggle({
+  mounted,
+  setTheme,
+}: {
+  mounted: boolean
+  setTheme: (theme: string) => void
+}) {
+  if (!mounted) return <div className="h-10 w-10" aria-hidden />
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-10 w-10 rounded-xl hover:bg-muted/80"
+          aria-label="Toggle theme"
+        >
+          <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+          <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="rounded-xl border-border/60">
+        <DropdownMenuItem onClick={() => setTheme("light")} className="rounded-lg">
+          Light
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setTheme("dark")} className="rounded-lg">
+          Dark
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setTheme("system")} className="rounded-lg">
+          System
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -398,7 +403,7 @@ function MosqueIcon({ className }: { className?: string }) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2"
+      strokeWidth={2}
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}

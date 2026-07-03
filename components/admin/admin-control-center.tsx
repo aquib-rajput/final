@@ -42,6 +42,16 @@ import type {
 import { useAdminPanelMetadata } from "@/lib/hooks/use-admin-panel";
 import { useRealtimeGateway } from "@/lib/hooks/use-realtime-gateway";
 import { cn } from "@/lib/utils";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -297,6 +307,10 @@ export function AdminControlCenter({
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [formValues, setFormValues] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
+  const [pendingDeleteItem, setPendingDeleteItem] = useState<
+    Record<string, unknown> | null
+  >(null);
+  const [deleting, setDeleting] = useState(false);
 
   const deferredSearch = useDeferredValue(search);
   const availableEntities = useMemo(
@@ -306,8 +320,16 @@ export function AdminControlCenter({
       ),
     [allowedEntityKeys, metadata?.entities]
   );
-  const selectedEntity =
-    availableEntities.find((entity) => entity.key === selectedEntityKey) ?? null;
+  const selectedEntity = useMemo(
+    () =>
+      availableEntities.find((entity) => entity.key === selectedEntityKey) ?? null,
+    [availableEntities, selectedEntityKey]
+  );
+  // Primitive keys are what we actually want to trigger fetches on. Deriving
+  // them here means the effects below don't re-run on every metadata snapshot
+  // refresh (which mutates object identities but keeps these values stable).
+  const selectedEntityFetchKey = selectedEntity?.key ?? null;
+  const selectedEntityIsSingleton = selectedEntity?.singleton ?? false;
   const activeLookups = entityData?.lookups ?? metadata?.lookups ?? {};
   const filterFields = useMemo(
     () =>
@@ -362,23 +384,27 @@ export function AdminControlCenter({
   }, [selectedEntityKey]);
 
   useEffect(() => {
-    if (!selectedEntity) {
+    if (!selectedEntityFetchKey) {
       setEntityData(null);
       return;
     }
 
-    const entity = selectedEntity;
+    const entityKey = selectedEntityFetchKey;
+    const isSingleton = selectedEntityIsSingleton;
     let cancelled = false;
 
     async function loadEntity() {
-      setLoadingEntity(true);
+      // Only flip the full-page spinner on the first load for this entity.
+      // Subsequent refreshes (from Refresh button, mutations, or realtime
+      // ticks) refetch silently in the background so the UI doesn't flash.
+      setLoadingEntity((previous) => (entityData ? previous : true));
       try {
         const params = new URLSearchParams({
-          limit: entity.singleton ? "1" : "50",
+          limit: isSingleton ? "1" : "50",
           offset: "0",
         });
 
-        if (!entity.singleton && deferredSearch.trim()) {
+        if (!isSingleton && deferredSearch.trim()) {
           params.set("search", deferredSearch.trim());
         }
 
@@ -389,7 +415,7 @@ export function AdminControlCenter({
         }
 
         const response = await fetch(
-          `/api/admin/entities/${entity.key}?${params.toString()}`,
+          `/api/admin/entities/${entityKey}?${params.toString()}`,
           { cache: "no-store" }
         );
         const payload = (await response.json().catch(() => ({}))) as
@@ -428,22 +454,30 @@ export function AdminControlCenter({
     return () => {
       cancelled = true;
     };
-  }, [selectedEntity, deferredSearch, filters, refreshTick]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    selectedEntityFetchKey,
+    selectedEntityIsSingleton,
+    deferredSearch,
+    filters,
+    refreshTick,
+  ]);
 
   useEffect(() => {
-    if (!selectedEntity) {
+    if (!selectedEntityFetchKey) {
       setActivity([]);
       return;
     }
 
-    const entity = selectedEntity;
+    const entityKey = selectedEntityFetchKey;
     let cancelled = false;
 
     async function loadActivity() {
-      setLoadingActivity(true);
+      // Background refreshes should not blank out the activity feed.
+      setLoadingActivity((previous) => (activity.length ? previous : true));
       try {
         const response = await fetch(
-          `/api/admin/activity?limit=6&entityType=${entity.key}`,
+          `/api/admin/activity?limit=6&entityType=${entityKey}`,
           { cache: "no-store" }
         );
         const payload = (await response.json().catch(() => ({}))) as
@@ -462,7 +496,7 @@ export function AdminControlCenter({
           setActivity((payload as AdminActivityResponse).items);
           setActivityUnavailable(false);
         }
-      } catch (error) {
+      } catch {
         if (!cancelled) {
           setActivity([]);
           setActivityUnavailable(true);
@@ -479,26 +513,21 @@ export function AdminControlCenter({
     return () => {
       cancelled = true;
     };
-  }, [selectedEntity, refreshTick]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEntityFetchKey, refreshTick]);
 
+  // Realtime events are used purely to clear any stale "realtime unavailable"
+  // badge state. We intentionally do NOT force a table refetch here: the
+  // shared admin metadata store already patches live entity counts in place,
+  // mutations performed in this panel bump `refreshTick` explicitly, and the
+  // Refresh button is available for pulling in externally-made changes. This
+  // prevents the list and activity feed from flashing "Loading..." every time
+  // an unrelated realtime event arrives.
   useRealtimeGateway({
     enabled: Boolean(metadata?.realtimeFeed),
     feedStreamId: metadata?.realtimeFeed,
-    onEvent: (event) => {
+    onEvent: () => {
       setRealtimeIssue(null);
-      if (!selectedEntityKey) {
-        refreshMetadata();
-        return;
-      }
-
-      if (event.entityType !== selectedEntityKey && event.entityType !== "settings") {
-        return;
-      }
-
-      startTransition(() => {
-        refreshMetadata();
-        setRefreshTick((current) => current + 1);
-      });
     },
     onError: (error) => {
       setRealtimeIssue(error.message);
@@ -560,16 +589,24 @@ export function AdminControlCenter({
     setFilters({});
   }
 
-  async function handleDelete(item: Record<string, unknown>) {
+  function requestDelete(item: Record<string, unknown>) {
     if (!selectedEntity?.capability.delete) return;
     const itemId = String(item[selectedEntity.primaryKey] ?? "");
     if (!itemId) return;
+    setPendingDeleteItem(item);
+  }
 
-    const confirmed = window.confirm(
-      `Delete this ${selectedEntity.singularLabel.toLowerCase()}? This action cannot be undone.`
+  async function confirmDelete() {
+    if (!selectedEntity?.capability.delete || !pendingDeleteItem) return;
+    const itemId = String(
+      pendingDeleteItem[selectedEntity.primaryKey] ?? ""
     );
-    if (!confirmed) return;
+    if (!itemId) {
+      setPendingDeleteItem(null);
+      return;
+    }
 
+    setDeleting(true);
     try {
       const response = await fetch(
         `/api/admin/entities/${selectedEntity.key}/${itemId}`,
@@ -582,16 +619,48 @@ export function AdminControlCenter({
       };
 
       if (!response.ok) {
-        throw new Error(payload.error || "Delete failed");
+        // Foreign-key violations bubble up from Postgres with a long, technical
+        // message. Surface a user-friendly hint while keeping the underlying
+        // detail in the toast description.
+        const fallback = `${selectedEntity.singularLabel} could not be deleted`;
+        const rawMessage = payload.error || fallback;
+        const isForeignKey = /foreign key|violates|referenced|constraint/i.test(
+          rawMessage
+        );
+        if (isForeignKey) {
+          toast.error(`${fallback} because it has linked records.`, {
+            description:
+              "Remove or reassign related items (events, prayer times, donations, etc.) and try again.",
+          });
+        } else {
+          toast.error(rawMessage);
+        }
+        return;
       }
 
       toast.success(`${selectedEntity.singularLabel} deleted`);
+      // Optimistically drop the row so the table updates instantly even before
+      // the background refetch completes.
+      setEntityData((current) => {
+        if (!current) return current;
+        const filteredItems = current.items.filter(
+          (existing) => String(existing[selectedEntity.primaryKey] ?? "") !== itemId
+        );
+        return {
+          ...current,
+          items: filteredItems,
+          total: Math.max(0, (current.total ?? filteredItems.length) - 1),
+        };
+      });
       startTransition(() => {
         refreshMetadata();
         setRefreshTick((current) => current + 1);
       });
+      setPendingDeleteItem(null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Delete failed");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -1046,48 +1115,50 @@ export function AdminControlCenter({
                   No {selectedEntity.label.toLowerCase()} found.
                 </div>
               ) : (
-                <div className="rounded-lg border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        {selectedEntity.listFields.map((fieldKey) => {
-                          const field = selectedEntity.formFields.find(
-                            (entry) => entry.key === fieldKey
-                          );
-                          return (
-                            <TableHead key={fieldKey}>
-                              {field?.label ?? fieldKey}
-                            </TableHead>
-                          );
-                        })}
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {entityData.items.map((item) => (
-                        <TableRow
-                          key={String(
-                            item[selectedEntity.primaryKey] ??
-                              selectedEntity.singletonId ??
-                              selectedEntity.key
-                          )}
+                <>
+                  {/* Mobile card view (< md). Tables don't fit on phones, so we
+                      stack each record into a tappable card with the same data
+                      and the same Edit/Delete actions. */}
+                  <div className="space-y-3 md:hidden">
+                    {entityData.items.map((item) => {
+                      const itemKey = String(
+                        item[selectedEntity.primaryKey] ??
+                          selectedEntity.singletonId ??
+                          selectedEntity.key
+                      );
+                      const [primaryFieldKey, ...secondaryFieldKeys] =
+                        selectedEntity.listFields;
+                      const primaryField = primaryFieldKey
+                        ? selectedEntity.formFields.find(
+                            (entry) => entry.key === primaryFieldKey
+                          )
+                        : undefined;
+                      const primaryValue = primaryFieldKey
+                        ? formatCellValue(
+                            primaryField,
+                            item[primaryFieldKey],
+                            activeLookups
+                          )
+                        : selectedEntity.singularLabel;
+
+                      return (
+                        <div
+                          key={itemKey}
+                          className="ios-card flex flex-col gap-3"
                         >
-                          {selectedEntity.listFields.map((fieldKey) => {
-                            const field = selectedEntity.formFields.find(
-                              (entry) => entry.key === fieldKey
-                            );
-                            return (
-                              <TableCell key={fieldKey}>
-                                {formatCellValue(field, item[fieldKey], activeLookups)}
-                              </TableCell>
-                            );
-                          })}
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-semibold text-foreground line-clamp-2">
+                                {primaryValue}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1">
                               {selectedEntity.capability.update && (
                                 <Button
                                   variant="ghost"
                                   size="icon"
+                                  className="h-9 w-9"
+                                  aria-label={`Edit ${selectedEntity.singularLabel.toLowerCase()}`}
                                   onClick={() => openEditDialog(item)}
                                 >
                                   <Pencil className="h-4 w-4" />
@@ -1098,18 +1169,118 @@ export function AdminControlCenter({
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    onClick={() => handleDelete(item)}
+                                    className="h-9 w-9"
+                                    aria-label={`Delete ${selectedEntity.singularLabel.toLowerCase()}`}
+                                    onClick={() => requestDelete(item)}
                                   >
                                     <Trash2 className="h-4 w-4 text-destructive" />
                                   </Button>
                                 )}
                             </div>
-                          </TableCell>
+                          </div>
+
+                          {secondaryFieldKeys.length > 0 ? (
+                            <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                              {secondaryFieldKeys.map((fieldKey) => {
+                                const field = selectedEntity.formFields.find(
+                                  (entry) => entry.key === fieldKey
+                                );
+                                return (
+                                  <div
+                                    key={fieldKey}
+                                    className="flex min-w-0 flex-col gap-0.5"
+                                  >
+                                    <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                                      {field?.label ?? fieldKey}
+                                    </dt>
+                                    <dd className="truncate text-foreground">
+                                      {formatCellValue(
+                                        field,
+                                        item[fieldKey],
+                                        activeLookups
+                                      )}
+                                    </dd>
+                                  </div>
+                                );
+                              })}
+                            </dl>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Desktop / tablet table (>= md). */}
+                  <div className="hidden rounded-lg border md:block">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          {selectedEntity.listFields.map((fieldKey) => {
+                            const field = selectedEntity.formFields.find(
+                              (entry) => entry.key === fieldKey
+                            );
+                            return (
+                              <TableHead key={fieldKey}>
+                                {field?.label ?? fieldKey}
+                              </TableHead>
+                            );
+                          })}
+                          <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                      </TableHeader>
+                      <TableBody>
+                        {entityData.items.map((item) => (
+                          <TableRow
+                            key={String(
+                              item[selectedEntity.primaryKey] ??
+                                selectedEntity.singletonId ??
+                                selectedEntity.key
+                            )}
+                          >
+                            {selectedEntity.listFields.map((fieldKey) => {
+                              const field = selectedEntity.formFields.find(
+                                (entry) => entry.key === fieldKey
+                              );
+                              return (
+                                <TableCell key={fieldKey}>
+                                  {formatCellValue(
+                                    field,
+                                    item[fieldKey],
+                                    activeLookups
+                                  )}
+                                </TableCell>
+                              );
+                            })}
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-2">
+                                {selectedEntity.capability.update && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => openEditDialog(item)}
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                )}
+                                {selectedEntity.capability.delete &&
+                                  !selectedEntity.singleton && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      aria-label={`Delete ${selectedEntity.singularLabel.toLowerCase()}`}
+                                      onClick={() => requestDelete(item)}
+                                    >
+                                      <Trash2 className="h-4 w-4 text-destructive" />
+                                    </Button>
+                                  )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>
@@ -1236,6 +1407,43 @@ export function AdminControlCenter({
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={pendingDeleteItem !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleting) {
+            setPendingDeleteItem(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete this {selectedEntity?.singularLabel.toLowerCase() ?? "record"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. The record will be permanently
+              removed from the database.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmDelete();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

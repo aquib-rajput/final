@@ -15,8 +15,8 @@ export default function HomePage() {
       <main className="flex-1">
         <HeroSection />
         <FeaturesSection />
-        <div className="page-container page-section">
-          <div className="grid gap-8 lg:grid-cols-3">
+        <div className="mobile-container py-8 sm:py-12 lg:py-16">
+          <div className="grid gap-6 sm:gap-8 lg:grid-cols-3">
             <div className="lg:col-span-2">
               <NearbyMosquesPreview />
             </div>
